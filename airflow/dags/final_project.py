@@ -1,11 +1,7 @@
 from datetime import datetime, timedelta
-import pendulum
-import os
-from airflow.decorators import dag
-from airflow.operators.dummy_operator import DummyOperator
 from airflow import DAG
-from airflow.operators.postgres_operator import PostgresOperator
-from airflow import conf
+from airflow.operators.empty import EmptyOperator  # Updated import for Airflow 2
+from airflow.providers.postgres.operators.postgres import PostgresOperator  # Updated import
 from airflow.operators import (
     StageToRedshiftOperator,
     LoadFactOperator,
@@ -27,12 +23,10 @@ dag = DAG(
     default_args=default_args,
     description="Load and transform data in Redshift with Airflow",
     schedule_interval="@hourly",
-    start_date=datetime(2023, 1, 1),
     catchup=False,
 )
 
-
-start_operator = DummyOperator(task_id="Begin_execution")
+start_operator = EmptyOperator(task_id="Begin_execution", dag=dag)
 
 create_staging_events_table = PostgresOperator(
     task_id="Create_tables",
@@ -107,32 +101,28 @@ load_time_dimension_table = LoadDimensionOperator(
     append_only=False,
 )
 
+# ✅ Parameterized Data Quality Checks
+dq_checks = [
+    {"sql": "SELECT COUNT(*) FROM songplays", "expected": 1},
+    {"sql": "SELECT COUNT(*) FROM users", "expected": 1},
+    {"sql": "SELECT COUNT(*) FROM songs", "expected": 1},
+    {"sql": "SELECT COUNT(*) FROM artists", "expected": 1},
+    {"sql": "SELECT COUNT(*) FROM time", "expected": 1},
+]
+
 run_quality_checks = DataQualityOperator(
     task_id="Run_data_quality_checks",
     dag=dag,
     redshift_conn_id="redshift",
-    tables=["songplays", "users", "songs", "artists", "time"],
+    tests=dq_checks,
 )
 
-end_operator = DummyOperator(task_id="Stop_execution", dag=dag)
+end_operator = EmptyOperator(task_id="Stop_execution", dag=dag)
 
-# set task accordign to required flow
-(
-    start_operator
-    >> [
-        stage_events_to_redshift,
-        stage_songs_to_redshift,
-    ]
-    >> load_songplays_table
-)
-(
-    load_songplays_table
-    >> [
-        load_user_dimension_table,
-        load_song_dimension_table,
-        load_artist_dimension_table,
-        load_time_dimension_table,
-    ]
-    >> run_quality_checks
-    >> end_operator
-)
+# ✅ DAG Dependencies
+start_operator >> create_staging_events_table >> [stage_events_to_redshift, stage_songs_to_redshift] >> load_songplays_table
+load_songplays_table >> [
+    load_user_dimension_table,
+    load_song_dimension_table,
+    load_artist_dimension_table,
+    load_time_dimension_table,
