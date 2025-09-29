@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.empty import EmptyOperator  # Updated import for Airflow 2
-from airflow.providers.postgres.operators.postgres import PostgresOperator  # Updated import
+from airflow.operators.empty import EmptyOperator  
+from airflow.providers.postgres.operators.postgres import PostgresOperator 
 from airflow.operators import (
     StageToRedshiftOperator,
     LoadFactOperator,
@@ -143,7 +143,6 @@ run_quality_checks = DataQualityOperator(
 
 end_operator = EmptyOperator(task_id="Stop_execution", dag=dag)
 
-# ✅ DAG Dependencies
 start_operator >> create_staging_events_table >> [stage_events_to_redshift, stage_songs_to_redshift] >> load_songplays_table
 load_songplays_table >> [
     load_user_dimension_table,
