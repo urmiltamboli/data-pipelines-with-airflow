@@ -8,31 +8,34 @@ class DataQualityOperator(BaseOperator):
     ui_color = "#89DA59"
 
     @apply_defaults
-    def __init__(self, redshift_conn_id="", tests=[], *args, **kwargs):
+    def __init__(self, redshift_conn_id="", checks=[], *args, **kwargs):
         super(DataQualityOperator, self).__init__(*args, **kwargs)
         self.redshift_conn_id = redshift_conn_id
-        self.tests = tests
+        self.checks = checks
 
     def execute(self, context):
         redshift = PostgresHook(postgres_conn_id=self.redshift_conn_id)
+        failing_tests = []
 
-        for test in self.tests:
-            sql = test.get("sql")
-            expected = test.get("expected")
+        for check in self.checks:
+            sql = check.get("sql")
+            op = check.get("op")
+            val = check.get("val")
+            msg = check.get("msg", "Data quality check failed")
 
-            if not sql or expected is None:
-                raise AirflowException("Each test must include 'sql' and 'expected' keys.")
+            if not sql or not op or val is None:
+                raise AirflowException("Each check must include 'sql', 'op', and 'val'.")
 
-            self.log.info(f"Running data quality check: {sql}")
             records = redshift.get_records(sql)
-
             if len(records) < 1 or len(records[0]) < 1:
-                raise AirflowException(f"Data quality check failed: '{sql}' returned no results.")
+                failing_tests.append(f"{msg}: Query returned no results.")
+                continue
 
-            actual = records[0][0]
-            if actual != expected:
-                raise AirflowException(
-                    f"Data quality check failed: '{sql}' returned {actual}, expected {expected}."
-                )
+            result = records[0][0]
+            if not eval(f"{result} {op} {val}"):
+                failing_tests.append(f"{msg}: Got {result}, expected {op} {val}.")
 
-            self.log.info(f"Data quality check passed: '{sql}' returned {actual} as expected.")
+        if failing_tests:
+            raise AirflowException("Data quality checks failed:\n" + "\n".join(failing_tests))
+
+        self.log.info("All data quality checks passed.")

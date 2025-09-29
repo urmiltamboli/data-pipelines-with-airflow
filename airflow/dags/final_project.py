@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.empty import EmptyOperator 
-from airflow.providers.postgres.operators.postgres import PostgresOperator  
+from airflow.operators.empty import EmptyOperator  # Updated import for Airflow 2
+from airflow.providers.postgres.operators.postgres import PostgresOperator  # Updated import
 from airflow.operators import (
     StageToRedshiftOperator,
     LoadFactOperator,
@@ -101,25 +101,49 @@ load_time_dimension_table = LoadDimensionOperator(
     append_only=False,
 )
 
-
 dq_checks = [
-    {"sql": "SELECT COUNT(*) FROM songplays", "expected": 1},
-    {"sql": "SELECT COUNT(*) FROM users", "expected": 1},
-    {"sql": "SELECT COUNT(*) FROM songs", "expected": 1},
-    {"sql": "SELECT COUNT(*) FROM artists", "expected": 1},
-    {"sql": "SELECT COUNT(*) FROM time", "expected": 1},
+    {
+        "sql": "SELECT COUNT(*) FROM songplays",
+        "op": ">",
+        "val": 0,
+        "msg": "songplays table is empty"
+    },
+    {
+        "sql": "SELECT COUNT(*) FROM users",
+        "op": ">",
+        "val": 0,
+        "msg": "users table is empty"
+    },
+    {
+        "sql": "SELECT COUNT(*) FROM songs",
+        "op": ">",
+        "val": 0,
+        "msg": "songs table is empty"
+    },
+    {
+        "sql": "SELECT COUNT(*) FROM artists",
+        "op": ">",
+        "val": 0,
+        "msg": "artists table is empty"
+    },
+    {
+        "sql": "SELECT COUNT(*) FROM time",
+        "op": ">",
+        "val": 0,
+        "msg": "time table is empty"
+    },
 ]
 
 run_quality_checks = DataQualityOperator(
     task_id="Run_data_quality_checks",
     dag=dag,
     redshift_conn_id="redshift",
-    tests=dq_checks,
+    checks=dq_checks,
 )
 
 end_operator = EmptyOperator(task_id="Stop_execution", dag=dag)
 
-
+# ✅ DAG Dependencies
 start_operator >> create_staging_events_table >> [stage_events_to_redshift, stage_songs_to_redshift] >> load_songplays_table
 load_songplays_table >> [
     load_user_dimension_table,
